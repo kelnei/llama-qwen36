@@ -53,8 +53,10 @@ services:
       - "32768"
 
       # MTP speculative decoding
-      - --mtp
-      - "5"
+      - --spec-type
+      - mtp
+      - --spec-draft-n-max
+      - "2"
 
       # Sampling defaults
       - --temp
