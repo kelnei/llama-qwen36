@@ -1,6 +1,6 @@
 services:
   llama-qwen36:
-    image: ghcr.io/ggml-org/llama.cpp:server-vulkan
+    image: havenoammo/llama:vulkan-server
     container_name: llama-qwen36
     restart: unless-stopped
 
@@ -20,7 +20,7 @@ services:
 
     command:
       - --hf-repo
-      - unsloth/Qwen3.6-27B-GGUF:UD-Q4_K_XL
+      - unsloth/Qwen3.6-27B-MTP-GGUF
       - --host
       - 0.0.0.0
       - --port
@@ -51,6 +51,10 @@ services:
       - "1"
       - --predict
       - "32768"
+
+      # MTP speculative decoding
+      - --mtp
+      - "5"
 
       # Sampling defaults
       - --temp
