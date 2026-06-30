@@ -54,7 +54,7 @@ services:
 
       # MTP speculative decoding
       - --spec-type
-      - mtp
+      - draft-mtp
       - --spec-draft-n-max
       - "2"
 
