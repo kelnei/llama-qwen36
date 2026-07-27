@@ -1,26 +1,45 @@
+# Two mutually exclusive model profiles, both on port 8080.
+# Which one starts is controlled by COMPOSE_PROFILES in .env (default: stock).
+#
+#   docker compose up -d                        # stock Unsloth build
+#   docker compose --profile fable up -d        # DavidAU Fable-Fusion fine-tune
+#
+# Both services are profiled on purpose, so a stray `up` can never try to load
+# two 18 GB models onto the same 24 GB card.
+
+x-llama-base: &llama-base
+  image: ghcr.io/ggml-org/llama.cpp:server-vulkan
+  restart: unless-stopped
+  env_file:
+    - .env
+  # Vulkan / AMD GPU device passthrough
+  devices:
+    - /dev/dri:/dev/dri
+  ports:
+    - "8080:8080"
+  volumes:
+    - ./models:/models
+    - ./hf-cache:/root/.cache/huggingface
+
 services:
+  # ---------------------------------------------------------------------------
+  # Stock Unsloth Qwen3.6-27B (default)
+  # ---------------------------------------------------------------------------
   llama-qwen36:
-    image: havenoammo/llama:vulkan-server
+    <<: *llama-base
     container_name: llama-qwen36
-    restart: unless-stopped
-
-    env_file:
-      - .env
-
-    # Vulkan / AMD GPU device passthrough
-    devices:
-      - /dev/dri:/dev/dri
-
-    ports:
-      - "8080:8080"
-
-    volumes:
-      - ./models:/models
-      - ./hf-cache:/root/.cache/huggingface
+    profiles: ["stock"]
 
     command:
       - --hf-repo
       - unsloth/Qwen3.6-27B-MTP-GGUF:UD-Q4_K_XL
+      - --alias
+      - qwen3.6-27b
+
+      # Skip the vision projector: this server is for coding/terminal agents,
+      # and --hf-repo would otherwise auto-download and load it (~0.9 GB VRAM).
+      - --no-mmproj
+
       - --host
       - 0.0.0.0
       - --port
@@ -33,12 +52,97 @@ services:
       - auto
       - --fit
       - "on"
+      # Headless box with no desktop, so the 1024 MiB default margin is
+      # more than needed; 512 buys back context without spilling layers.
       - --fit-target
-      - "1024"
+      - "512"
 
-      # Runtime config
+      # Runtime config. 163840 is the measured ceiling for this quant: it is
+      # the largest context that still keeps all 66/66 layers on the GPU.
+      # 180224 spills 2 layers to CPU and drops from 77 to 45 tok/s.
       - --ctx-size
-      - "131072"
+      - "163840"
+      - --flash-attn
+      - "on"
+      - --cache-type-k
+      - q8_0
+      - --cache-type-v
+      - q8_0
+
+      # Server behavior
+      - --parallel
+      - "1"
+      - --predict
+      - "32768"
+
+      # MTP speculative decoding. n-max 2 measured fastest on this card;
+      # 3 is no better and 4 collapses back to non-MTP speed. See README.
+      - --spec-type
+      - draft-mtp
+      - --spec-draft-n-max
+      - "2"
+
+      # Sampling defaults (Qwen3.6 thinking / precise-coding preset)
+      - --temp
+      - "0.6"
+      - --top-p
+      - "0.95"
+      - --top-k
+      - "20"
+      - --min-p
+      - "0.0"
+      - --presence-penalty
+      - "0.0"
+      - --repeat-penalty
+      - "1.0"
+
+      # Qwen3.6 supports carrying reasoning across turns; the server itself
+      # recommends this when the chat template advertises the capability.
+      - --reasoning-preserve
+      - --jinja
+
+  # ---------------------------------------------------------------------------
+  # DavidAU Qwen3.6-27B Fable-Fusion-711 (uncensored / Heretic fine-tune)
+  # ---------------------------------------------------------------------------
+  llama-qwen36-fable:
+    <<: *llama-base
+    container_name: llama-qwen36-fable
+    profiles: ["fable"]
+
+    command:
+      # This repo mixes MTP and non-MTP files and uses non-standard quant
+      # names, so the exact filename is pinned rather than a :QUANT suffix.
+      - --hf-repo
+      - DavidAU/Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-NEO-MAX-MTP-GGUF
+      - --hf-file
+      - Qwen3.6-27B-Fable-Fus-711-UnHeretic-NM-DAU-NEO-MAX-NEO-MTP-Q4_K_M.gguf
+      - --alias
+      - qwen3.6-27b-fable
+
+      - --no-mmproj
+
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+
+      # GPU / Vulkan offload
+      - --device
+      - Vulkan0
+      - --gpu-layers
+      - auto
+      - --fit
+      - "on"
+      # Headless box with no desktop, so the 1024 MiB default margin is
+      # more than needed; 512 buys back context without spilling layers.
+      - --fit-target
+      - "512"
+
+      # Runtime config. This quant is ~600 MB larger than the stock one, so
+      # its ceiling is lower: 147456 keeps 66/66 layers on the GPU, while
+      # 163840 spills one layer to CPU and drops from 72 to 49 tok/s.
+      - --ctx-size
+      - "147456"
       - --flash-attn
       - "on"
       - --cache-type-k
@@ -58,7 +162,8 @@ services:
       - --spec-draft-n-max
       - "2"
 
-      # Sampling defaults
+      # Sampling defaults. DavidAU's precise-coding preset matches the stock
+      # Qwen numbers; keep temp <= 1.0 or MTP acceptance degrades.
       - --temp
       - "0.6"
       - --top-p
@@ -72,7 +177,5 @@ services:
       - --repeat-penalty
       - "1.0"
 
-      # Useful for terminal agents
-      - --alias
-      - qwen3.6-27b
+      - --reasoning-preserve
       - --jinja

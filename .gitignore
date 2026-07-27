@@ -1,4 +1,4 @@
 .env
 hf-cache/
 models/
-*.guff
+*.gguf
