@@ -32,9 +32,9 @@ services:
 
     command:
       - --hf-repo
-      - unsloth/Qwen3.6-27B-MTP-GGUF:UD-Q4_K_XL
+      - unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL
       - --alias
-      - qwen3.6-27b
+      - qwen3.8-27b
 
       # Skip the vision projector: this server is for coding/terminal agents,
       # and --hf-repo would otherwise auto-download and load it (~0.9 GB VRAM).
@@ -84,7 +84,7 @@ services:
 
       # Sampling defaults (Qwen3.6 thinking / precise-coding preset)
       - --temp
-      - "0.6"
+      - "1.0"
       - --top-p
       - "0.95"
       - --top-k
@@ -98,6 +98,8 @@ services:
 
       # Qwen3.6 supports carrying reasoning across turns; the server itself
       # recommends this when the chat template advertises the capability.
+      - --reasoning
+      - on
       - --reasoning-preserve
       - --jinja
 
